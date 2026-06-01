@@ -20,6 +20,7 @@ Examples:
     python tools/pdf2md.py 2401.12345
     python tools/pdf2md.py https://arxiv.org/abs/2401.12345
     python tools/pdf2md.py paper.pdf --backend marker
+    python tools/pdf2md.py paper.pdf --backend pymupdf4llm
     python tools/pdf2md.py paper.pdf -o raw/papers/my-paper.md
 """
 
@@ -123,7 +124,7 @@ def convert_marker(pdf_path: Path, output: Path) -> Path:
 # ─── Backend: pymupdf4llm ───────────────────────────────────────────
 
 def convert_pymupdf(pdf_path: Path, output: Path) -> Path:
-    """Convert PDF using pymupdf4llm (fast, lightweight, native-text PDFs)."""
+    """Convert PDF using pymupdf4llm and extract images beside the Markdown."""
     pip_name = "pymupdf4llm"
     if not check_dependency("pymupdf4llm", pip_name):
         print(f"Error: pymupdf4llm not installed.\n{install_hint(pip_name)}")
@@ -131,11 +132,35 @@ def convert_pymupdf(pdf_path: Path, output: Path) -> Path:
 
     import pymupdf4llm
 
+    pdf_path = pdf_path.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    md_text = pymupdf4llm.to_markdown(str(pdf_path))
+    image_dir_rel = Path("assets") / output.stem
+    image_dir_abs = output.parent / image_dir_rel
+    image_dir_abs.mkdir(parents=True, exist_ok=True)
+
+    # Run from the Markdown output directory so pymupdf4llm writes relative
+    # image links like assets/paper/page-1.png instead of absolute paths.
+    old_cwd = Path.cwd()
+    try:
+        os.chdir(output.parent)
+        md_text = pymupdf4llm.to_markdown(
+            str(pdf_path),
+            write_images=True,
+            image_path=image_dir_rel.as_posix(),
+            image_format="png",
+            dpi=200,
+        )
+    finally:
+        os.chdir(old_cwd)
+
     output.write_text(md_text, encoding="utf-8")
 
     print(f"  ✓ Converted {pdf_path.name} → {output.relative_to(REPO_ROOT)}")
+    images = sorted(image_dir_abs.glob("*"))
+    if images:
+        print(f"  ✓ Extracted {len(images)} image(s) → {image_dir_abs.relative_to(REPO_ROOT)}")
+    else:
+        print(f"  No images extracted → {image_dir_abs.relative_to(REPO_ROOT)}")
     return output
 
 
