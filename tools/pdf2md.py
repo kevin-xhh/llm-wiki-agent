@@ -3,7 +3,7 @@
 Convert PDF or arXiv sources to Markdown for the raw/ directory.
 
 Usage:
-    python tools/pdf2md.py <input> [--output raw/papers/output.md] [--backend auto]
+    python tools/pdf2md.py <input> [--output output.md] [--backend auto]
 
 Inputs:
     arXiv ID      →  2401.12345
@@ -64,6 +64,14 @@ def install_hint(pip_name: str) -> str:
     return f"  Install with: pip install {pip_name}"
 
 
+def display_path(path: Path) -> str:
+    """Return a repo-relative path when possible, otherwise a full path."""
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 # ─── Backend: arxiv2md ──────────────────────────────────────────────
 
 def convert_arxiv(arxiv_id: str, output: Path) -> Path:
@@ -82,7 +90,7 @@ def convert_arxiv(arxiv_id: str, output: Path) -> Path:
         print(f"Error: arxiv2md failed:\n{result.stderr}")
         sys.exit(1)
 
-    print(f"  ✓ Converted arXiv {arxiv_id} → {output.relative_to(REPO_ROOT)}")
+    print(f"  ✓ Converted arXiv {arxiv_id} → {display_path(output)}")
     return output
 
 
@@ -117,7 +125,7 @@ def convert_marker(pdf_path: Path, output: Path) -> Path:
     import shutil
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    print(f"  ✓ Converted {pdf_path.name} → {output.relative_to(REPO_ROOT)}")
+    print(f"  ✓ Converted {pdf_path.name} → {display_path(output)}")
     return output
 
 
@@ -155,12 +163,12 @@ def convert_pymupdf(pdf_path: Path, output: Path) -> Path:
 
     output.write_text(md_text, encoding="utf-8")
 
-    print(f"  ✓ Converted {pdf_path.name} → {output.relative_to(REPO_ROOT)}")
+    print(f"  ✓ Converted {pdf_path.name} → {display_path(output)}")
     images = sorted(image_dir_abs.glob("*"))
     if images:
-        print(f"  ✓ Extracted {len(images)} image(s) → {image_dir_abs.relative_to(REPO_ROOT)}")
+        print(f"  ✓ Extracted {len(images)} image(s) → {display_path(image_dir_abs)}")
     else:
-        print(f"  No images extracted → {image_dir_abs.relative_to(REPO_ROOT)}")
+        print(f"  No images extracted → {display_path(image_dir_abs)}")
     return output
 
 
@@ -188,10 +196,11 @@ def resolve_output(source: str, arxiv_id: str | None, output_arg: str | None) ->
 
     if arxiv_id:
         slug = slugify(arxiv_id)
-    else:
-        slug = slugify(Path(source).stem)
+        return DEFAULT_OUTPUT_DIR / f"{slug}.md"
 
-    return DEFAULT_OUTPUT_DIR / f"{slug}.md"
+    source_path = Path(source)
+    output = source_path.with_suffix(".md")
+    return output if output.is_absolute() else REPO_ROOT / output
 
 
 def main():
@@ -201,7 +210,11 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument("input", help="arXiv ID, arXiv URL, or path to a PDF file")
-    parser.add_argument("-o", "--output", help="Output .md path (default: raw/papers/<slug>.md)")
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Output .md path (default: local PDFs write beside the PDF; arXiv writes to raw/papers/<slug>.md)",
+    )
     parser.add_argument(
         "-b", "--backend",
         choices=["auto", "arxiv2md", "marker", "pymupdf4llm"],
@@ -216,7 +229,7 @@ def main():
 
     print(f"\npdf2md — LLM Wiki Agent")
     print(f"  Input:   {args.input}")
-    print(f"  Output:  {output.relative_to(REPO_ROOT)}")
+    print(f"  Output:  {display_path(output)}")
 
     # ── Auto-select backend ──
     if backend == "auto":
@@ -251,8 +264,8 @@ def main():
         BACKENDS[backend](pdf_path, output)
 
     print(f"\nDone. Now ingest with:")
-    print(f"  python tools/ingest.py {output.relative_to(REPO_ROOT)}")
-    print(f"  — or in your agent: ingest {output.relative_to(REPO_ROOT)}")
+    print(f"  python tools/ingest.py {display_path(output)}")
+    print(f"  — or in your agent: ingest {display_path(output)}")
 
 
 if __name__ == "__main__":
